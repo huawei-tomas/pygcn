@@ -11,6 +11,32 @@ def encode_onehot(labels):
                              dtype=np.int32)
     return labels_onehot
 
+def make_batch(adj_csr, features_in, labels_in, idxs):
+    """Slice the adjacency, feature, and label matrices according to idxs.
+    Temporary approach. Certainly won't do it this way when features is large.
+    """
+    # Index of the orginal matrix is mapped onto the index of the new matrices.
+    idx_map = {j: i for i, j in enumerate(idxs)} # might make sense to flip j and i
+
+    # Get rows. adj needs to be a csr or csc matrix to allow indexing.
+    adj = adj_csr[idxs, :]
+    # Get columns. Simply typing adj_csr[idxs,idxs] doesn't work.
+    adj = adj[:, idxs]
+
+    # Get features. Rows are "samples" e.g. nodes and columns are features.
+    features = features_in[idxs, :]
+
+    # Get labels slice
+    labels = labels_in[idxs]
+
+    # Symmetrize adjacency matrix.
+    adj = adj + adj.T.multiply(adj.T > adj) - adj.multiply(adj.T > adj)
+
+    # Normalize.
+    features = normalize(features)
+    adj = normalize(adj + sp.eye(adj.shape[0]))
+
+    return adj, features, labels, idx_map
 
 def load_data(path="../data/cora/", dataset="cora"):
     """Load citation network dataset (cora only for now)"""
@@ -23,21 +49,36 @@ def load_data(path="../data/cora/", dataset="cora"):
 
     # build graph
     idx = np.array(idx_features_labels[:, 0], dtype=np.int32)
+
+    # the new index is the order we see the indices in. Map from the number
+    # given in the file (the index) to the order it is seen in the flat file
+    # (which is the new index)
     idx_map = {j: i for i, j in enumerate(idx)}
+
+    # Pull the edges from their flat file.
     edges_unordered = np.genfromtxt("{}{}.cites".format(path, dataset),
                                     dtype=np.int32)
+    #  Map
     edges = np.array(list(map(idx_map.get, edges_unordered.flatten())),
                      dtype=np.int32).reshape(edges_unordered.shape)
     adj = sp.coo_matrix((np.ones(edges.shape[0]), (edges[:, 0], edges[:, 1])),
                         shape=(labels.shape[0], labels.shape[0]),
                         dtype=np.float32)
 
+
+    idx_batch1 = range(70)
+    idx_batch2 = range(70,140)
+
+    adj_csr = sp.csr_matrix(adj)
+    adj, features, labels, idx_mp = make_batch(adj_csr, features, labels, idx_batch2)
+
     # build symmetric adjacency matrix
-    adj = adj + adj.T.multiply(adj.T > adj) - adj.multiply(adj.T > adj)
+    # adj = adj + adj.T.multiply(adj.T > adj) - adj.multiply(adj.T > adj)
 
-    features = normalize(features)
-    adj = normalize(adj + sp.eye(adj.shape[0]))
+    # features = normalize(features)
+    # adj = normalize(adj + sp.eye(adj.shape[0]))
 
+    # Not sure we want this here.
     idx_train = range(140)
     idx_val = range(200, 500)
     idx_test = range(500, 1500)
