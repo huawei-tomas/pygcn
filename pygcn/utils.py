@@ -13,10 +13,10 @@ def encode_onehot(labels):
 
 def make_batch(adj_csr, features_in, labels_in, idxs):
     """Slice the adjacency, feature, and label matrices according to idxs.
-    Temporary approach. Certainly won't do it this way when features is large.
+    Temporary approach. Certainly won't do it this way when features are large.
     """
-    # Index of the orginal matrix is mapped onto the index of the new matrices.
-    idx_map = {j: i for i, j in enumerate(idxs)} # might make sense to flip j and i
+
+    idx_map = {j: i for i, j in enumerate(idxs)}
 
     # Get rows. adj needs to be a csr or csc matrix to allow indexing.
     adj = adj_csr[idxs, :]
@@ -36,7 +36,35 @@ def make_batch(adj_csr, features_in, labels_in, idxs):
     features = normalize(features)
     adj = normalize(adj + sp.eye(adj.shape[0]))
 
+    # Convert to PyTorch tensors.
+    features = torch.FloatTensor(np.array(features.todense()))
+    # labels = torch.LongTensor(np.where(labels)[1])
+    adj = sparse_mx_to_torch_sparse_tensor(adj)
+
     return adj, features, labels, idx_map
+
+def training_split(idxs, train_size, val_size, test_size):
+    idx_set = set(idxs)
+    idx_train = np.random.choice(idxs, train_size,replace=False)
+    train_set = set(idx_train)
+
+    unsampled_set = idx_set.difference(train_set)
+    unsampled_idx = np.array(sorted(list(unsampled_set)))
+
+    idx_val = np.random.choice(unsampled_idx, val_size, replace=False)
+    val_set = set(idx_val)
+
+    unsampled_set = unsampled_set.difference(val_set)
+    unsampled_idx = np.array(sorted(list(unsampled_set)))
+
+    idx_test = np.random.choice(unsampled_idx, test_size, replace=False)
+
+    idx_train = torch.LongTensor(idx_train)
+    idx_val = torch.LongTensor(idx_val)
+    idx_test = torch.LongTensor(idx_test)
+
+    return idx_train, idx_val, idx_test
+
 
 def load_data(path="../data/cora/", dataset="cora"):
     """Load citation network dataset (cora only for now)"""
@@ -46,6 +74,7 @@ def load_data(path="../data/cora/", dataset="cora"):
                                         dtype=np.dtype(str))
     features = sp.csr_matrix(idx_features_labels[:, 1:-1], dtype=np.float32)
     labels = encode_onehot(idx_features_labels[:, -1])
+    labels = torch.LongTensor(np.where(labels)[1])
 
     # build graph
     idx = np.array(idx_features_labels[:, 0], dtype=np.int32)
@@ -66,11 +95,16 @@ def load_data(path="../data/cora/", dataset="cora"):
                         dtype=np.float32)
 
 
-    idx_batch1 = range(70)
-    idx_batch2 = range(70,140)
 
-    adj_csr = sp.csr_matrix(adj)
-    adj, features, labels, idx_mp = make_batch(adj_csr, features, labels, idx_batch2)
+
+    # Commenting all this out because we are going to normalize and Symmetrize
+    # the minibatches JIT for each epoch.
+
+    # idx_batch1 = range(70)
+    # idx_batch2 = range(70,140)
+
+    # adj_csr = sp.csr_matrix(adj)
+    # adj, features, labels, idx_map = make_batch(adj_csr, features, labels, idx_batch2)
 
     # build symmetric adjacency matrix
     # adj = adj + adj.T.multiply(adj.T > adj) - adj.multiply(adj.T > adj)
@@ -79,19 +113,19 @@ def load_data(path="../data/cora/", dataset="cora"):
     # adj = normalize(adj + sp.eye(adj.shape[0]))
 
     # Not sure we want this here.
-    idx_train = range(140)
-    idx_val = range(200, 500)
-    idx_test = range(500, 1500)
+    # idx_train = range(140)
+    # idx_val = range(200, 500)
+    # idx_test = range(500, 1500)
+    #
+    # features = torch.FloatTensor(np.array(features.todense()))
+    # labels = torch.LongTensor(np.where(labels)[1])
+    # adj = sparse_mx_to_torch_sparse_tensor(adj)
+    #
+    # idx_train = torch.LongTensor(idx_train)
+    # idx_val = torch.LongTensor(idx_val)
+    # idx_test = torch.LongTensor(idx_test)
 
-    features = torch.FloatTensor(np.array(features.todense()))
-    labels = torch.LongTensor(np.where(labels)[1])
-    adj = sparse_mx_to_torch_sparse_tensor(adj)
-
-    idx_train = torch.LongTensor(idx_train)
-    idx_val = torch.LongTensor(idx_val)
-    idx_test = torch.LongTensor(idx_test)
-
-    return adj, features, labels, idx_train, idx_val, idx_test
+    return adj, features, labels #, idx_train, idx_val, idx_test
 
 
 def normalize(mx):
